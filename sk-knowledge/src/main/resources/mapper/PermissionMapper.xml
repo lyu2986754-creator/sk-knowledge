@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.skcto.skknowledge.mapper.PermissionMapper">
+
+    <resultMap id="BaseResultMap" type="com.skcto.skknowledge.domain.Permission">
+            <id property="id" column="id" />
+            <result property="name" column="name" />
+            <result property="code" column="code" />
+            <result property="url" column="url" />
+            <result property="type" column="type" />
+            <result property="parentId" column="parent_id" />
+            <result property="orderNo" column="order_no" />
+            <result property="icon" column="icon" />
+            <result property="component" column="component" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,name,code,url,type,parent_id,
+        order_no,icon,component
+    </sql>
+    <select id="selectByUserId" resultMap="BaseResultMap">
+        SELECT
+            tp.*
+        FROM
+            sys_permission tp
+                LEFT JOIN sys_role_permission trp ON tp.id = trp.permission_id
+                LEFT JOIN sys_role tr ON trp.role_id = tr.id
+                LEFT JOIN sys_user_role tur ON tr.id = tur.role_id
+                LEFT JOIN sys_user tu ON tur.user_id = tu.id
+        WHERE
+            tu.id = #{userId}
+    </select>
+</mapper>

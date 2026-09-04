@@ -1,0 +1,90 @@
+# ============================================================
+# 开发环境配置模板（application-dev.yml.example）
+# 用法：复制本文件为 application-dev.yml 并填入你自己的值
+#   cp application-dev.yml.example application-dev.yml
+# 注意：application-dev.yml 已被 .gitignore 忽略，切勿提交真实密钥
+# ============================================================
+
+server:
+  port: 8082
+  tomcat:
+    connection-timeout: 60000
+spring:
+  application:
+    name: sk-knowledge
+  mvc:
+    pathmatch:
+      matching-strategy: ANT_PATH_MATCHER
+  jackson:
+    time-zone: GMT+8
+    date-format: yyyy-MM-dd HH:mm:ss
+  # 数据库
+  datasource:
+    username: root
+    password: YOUR_DB_PASSWORD          # 本地示例常用 123456，请按需修改
+    url: jdbc:mysql://127.0.0.1:13306/sk_knowledge?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  # redis
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 16379
+      database: 0
+      password: YOUR_REDIS_PASSWORD     # 本地示例常用 123456，请按需修改
+    mongodb:
+      host: 127.0.0.1
+      port: 27018
+      databaseName: knowledge
+  ai:
+    openai:
+      api-key: YOUR_SILICONFLOW_API_KEY    # 替换为你的硅基流动(SiliconFlow) API Key，形如 sk-xxxx
+      chat:
+        api-key: YOUR_SILICONFLOW_API_KEY
+        base-url: https://api.siliconflow.cn/
+        options:
+          model: Qwen/Qwen3.5-4B
+      embedding:
+        base-url: https://api.siliconflow.cn/
+        api-key: YOUR_SILICONFLOW_API_KEY
+        options:
+          model: BAAI/bge-m3
+    vectorstore:
+      weaviate:
+        host: 127.0.0.1:18088
+        scheme: http
+        filter-field:
+          knowledgeId: TEXT
+          source: TEXT
+        object-class: Knowledge
+    chat:
+      client:
+        enabled: false
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+  temporal:
+    connection:
+      target: 127.0.0.1:17233
+    workers-auto-discovery:
+      packages: com.skcto.skknowledge
+logging:
+  pattern:
+    console: "%-5level [%thread] %logger{36} - %msg%n"
+    file: "%-5level [%thread] %logger{36} - %msg%n"
+  level:
+    root: info
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+minio:
+  url: http://127.0.0.1:19000
+  accessKey: YOUR_MINIO_ACCESS_KEY     # 本地示例常用 admin
+  secretKey: YOUR_MINIO_SECRET_KEY     # 本地示例常用 admin123456
+  bucketName: knowledge
+
+# 自定义属性
+chunk:
+  threshold: 0.8
+  token: 500

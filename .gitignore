@@ -1,0 +1,24 @@
+# ===== OS / 编辑器 =====
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ===== Java / Maven (sk-knowledge) =====
+target/
+.mvn/
+*.class
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# ===== Node / 前端 (sk-knowledge-frontend) =====
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# ===== 含真实密钥，禁止提交；请复制 application-dev.yml.example 为 application-dev.yml 后填写 =====
+sk-knowledge/src/main/resources/application-dev.yml
+
+# ===== 日志 =====
+*.log

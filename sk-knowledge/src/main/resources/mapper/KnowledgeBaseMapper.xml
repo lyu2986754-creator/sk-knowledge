@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.skcto.skknowledge.mapper.KnowledgeBaseMapper">
+
+    <resultMap id="BaseResultMap" type="com.skcto.skknowledge.domain.KnowledgeBase">
+            <id property="id" column="id" />
+            <result property="knowledgeName" column="knowledge_name" />
+            <result property="share" column="share" />
+            <result property="description" column="description" />
+            <result property="knowledgeSeparator" column="knowledge_separator" />
+            <result property="questionSeparator" column="question_separator" />
+            <result property="overlapChar" column="overlap_char" />
+            <result property="retrieveLimit" column="retrieve_limit" />
+            <result property="textBlockSize" column="text_block_size" />
+            <result property="vectorModelId" column="vector_model_id" />
+            <result property="embeddingModelId" column="embedding_model_id" />
+            <result property="systemPrompt" column="system_prompt" />
+            <result property="createBy" column="create_by" />
+            <result property="createTime" column="create_time" />
+            <result property="updateBy" column="update_by" />
+            <result property="updateTime" column="update_time" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,knowledge_name,share,description,knowledge_separator,question_separator,
+        overlap_char,retrieve_limit,text_block_size,vector_model_name,embedding_model_name,
+        system_prompt,dept_id,create_by,create_time,update_by,
+        update_time,remark
+    </sql>
+</mapper>

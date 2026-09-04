@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.skcto.skknowledge.mapper.KnowledgeTrashMapper">
+
+    <resultMap id="BaseResultMap" type="com.skcto.skknowledge.domain.KnowledgeTrash">
+            <id property="id" column="id" />
+            <result property="knowledgeId" column="knowledge_id" />
+            <result property="docName" column="doc_name" />
+            <result property="docType" column="doc_type" />
+            <result property="docSize" column="doc_size" />
+            <result property="url" column="url" />
+            <result property="trashTime" column="trash_time" />
+            <result property="createBy" column="create_by" />
+            <result property="createTime" column="create_time" />
+            <result property="updateBy" column="update_by" />
+            <result property="updateTime" column="update_time" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,knowledge_id,doc_name,doc_type,doc_size,url,
+        trash_time,create_by,create_time,update_by,update_time
+    </sql>
+    <select id="selectPage" resultType="com.skcto.skknowledge.dto.KnowledgeTrashQueryDTO">
+        SELECT
+            kt.id id,
+            kt.doc_name docName,
+            kt.doc_type docType,
+            kt.url url,
+            kt.doc_size docSize,
+            kt.trash_time trashTime,
+            kb.id knowledgeId,
+            kb.knowledge_name knowledgeName
+        FROM
+            knowledge_trash kt
+                JOIN `knowledge_base` kb ON kb.id = kt.knowledge_id
+            ${ew.customSqlSegment}
+    </select>
+</mapper>

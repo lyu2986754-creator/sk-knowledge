@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.skcto.skknowledge.mapper.KnowledgeDocMapper">
+
+    <resultMap id="BaseResultMap" type="com.skcto.skknowledge.domain.KnowledgeDoc">
+            <id property="id" column="id" />
+            <result property="knowledgeId" column="knowledge_id" />
+            <result property="docName" column="doc_name" />
+            <result property="docType" column="doc_type" />
+            <result property="url" column="url" />
+            <result property="vectorStatus" column="vector_status" />
+            <result property="createBy" column="create_by" />
+            <result property="createTime" column="create_time" />
+            <result property="updateBy" column="update_by" />
+            <result property="updateTime" column="update_time" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,knowledge_id,doc_name,doc_type,url,
+        vector_status,content,create_by,create_time,
+        update_by,update_time
+    </sql>
+    <select id="selectPage" resultType="com.skcto.skknowledge.dto.KnowledgeDocQueryDTO">
+        SELECT
+            kd.id id,
+            kd.doc_name docName,
+            kd.doc_type docType,
+            kd.url url,
+            kd.doc_size docSize,
+            kd.vector_status,
+            kd.create_time createTime,
+            kb.id knowledgeId,
+            kb.knowledge_name knowledgeName
+        FROM
+            knowledge_doc kd
+                JOIN `knowledge_base` kb ON kb.id = kd.knowledge_id
+            ${ew.customSqlSegment}
+    </select>
+</mapper>

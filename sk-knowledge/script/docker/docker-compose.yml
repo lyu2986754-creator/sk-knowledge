@@ -1,0 +1,164 @@
+services:
+  # MySQL 服务配置
+  mysql:
+    image: mysql:8.4.0
+    container_name: mysql
+    restart: always
+    environment:
+      # 设置MySQL根用户密码
+      MYSQL_ROOT_PASSWORD: 123456
+      # 创建一个默认数据库
+      MYSQL_DATABASE: sk_knowledge
+    ports:
+      # 将容器的3306端口映射到主机的3306端口
+      - "3306:3306"
+    volumes:
+      # 持久化MySQL数据
+      - mysql-data:/var/lib/mysql
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis 服务配置
+  redis:
+    image: redis:7.0.11
+    container_name: redis
+    restart: always
+    command: redis-server --requirepass 123456 --appendonly yes
+    ports:
+      # 将容器的6379端口映射到主机的6379端口
+      - "6379:6379"
+    volumes:
+      # 持久化Redis数据
+      - redis-data:/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "123456", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  # Weaviate 服务配置
+  weaviate:
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8080'
+      - --scheme
+      - http
+    image: semitechnologies/weaviate:1.33.2
+    container_name: weaviate
+    ports:
+      - 8080:8080
+      - 50051:50051
+    volumes:
+      - weaviate-data:/var/lib/weaviate
+    restart: always
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      DEFAULT_VECTORIZER_MODULE: 'none'
+      ENABLE_MODULES: ''
+      CLUSTER_HOSTNAME: 'node1'
+    networks:
+      - app-network
+  #minio
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
+    container_name: minio
+    restart: always
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: admin123456
+    ports:
+      - "9000:9000"   # MinIO API 端口（用于程序访问）
+      - "9001:9001"   # MinIO 控制台端口（用于网页管理）
+    volumes:
+      # 持久化存储 MinIO 数据（宿主机目录可自定义）
+      - minio-data:/data
+    command: server /data --console-address ":9001"  # 指定数据目录和控制台端口
+    healthcheck:
+      # 健康检查配置
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - app-network
+  #mongodb
+  mongodb:
+    image: mongo:8.0.0
+    container_name: mongodb
+    restart: always
+    ports:
+      - "27017:27017"  # 映射MongoDB默认端口（主机:容器）
+    volumes:
+      # 持久化存储MongoDB数据
+      - mongodb-data:/data/db
+    command:
+      # 启动命令（如需自定义配置，可添加--config /etc/mongo/mongo.conf）
+      - --bind_ip_all  # 允许所有IP访问（生产环境建议限制特定IP）
+    healthcheck:
+      # 健康检查：通过mongodb-shell验证服务可用性
+      test: echo 'db.runCommand("ping").ok' | mongosh mongodb:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network  # 自定义网络隔离
+
+  # Temporal 服务（使用 MySQL 作为存储）
+  temporal:
+    image: temporalio/auto-setup:1.29.0
+    container_name: temporal-service
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - DB=mysql8                     # 指定数据库
+      - DB_PORT=3306
+      - MYSQL_USER=root     # 对应 MySQL 的用户
+      - MYSQL_PWD=123456
+      - MYSQL_SEEDS=mysql            # 连接到 MySQL 容器
+#      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development.yaml
+      # Temporal 数据库名称（需与初始化脚本一致）
+      - DATABASE_NAME=temporal
+      - VISIBILITY_DATABASE_NAME=temporal_visibility
+    ports:
+      - "7233:7233"  # Temporal gRPC 端口
+    networks:
+      - app-network
+
+  # Temporal Web UI
+  temporal-ui:
+    image: temporalio/ui:2.39.0
+    container_name: temporal-ui
+    restart: always
+    depends_on:
+      - temporal
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233  # 连接 Temporal 服务
+      - TEMPORAL_UI_PORT=8080
+    ports:
+      - "8081:8080"  # UI 访问端口
+    networks:
+      - app-network
+# 定义网络
+networks:
+  app-network:
+    driver: bridge
+
+# 定义数据卷，用于持久化数据
+volumes:
+  mysql-data:
+  redis-data:
+  weaviate-data:
+  mongodb-data:
+  minio-data:
