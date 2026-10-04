@@ -49,11 +49,14 @@
             :autosize="{ minRows: 3, maxRows: 8 }" style="width: 100%; margin-bottom: 12px;"
             @keydown.enter.exact.prevent="sendMessage" />
           <div style="display: flex; justify-content: flex-end; align-items: center; gap: 12px;">
-            选择模型：
-            <n-select v-model:value="selectedModelId" :options="modelOptions" placeholder="选择模型" style="width: 200px;">
+            <span style="white-space: nowrap">模式：</span>
+            <n-select v-model:value="mode" :options="modeOptions" style="width: 140px;">
             </n-select>
-            选择知识库：
-            <n-select v-model:value="knowledgeId" :options="knowledgeOptions" placeholder="选择知识库" style="width: 200px;">
+            <span style="white-space: nowrap">模型：</span>
+            <n-select v-model:value="selectedModelId" :options="modelOptions" placeholder="选择模型" style="width: 170px;">
+            </n-select>
+            <span style="white-space: nowrap">知识库：</span>
+            <n-select v-model:value="knowledgeId" :options="knowledgeOptions" placeholder="选择知识库" style="width: 170px;">
             </n-select>
             <n-button type="primary" @click="sendMessage" :loading="isLoading" style="height: 40px;">
               发送
@@ -66,7 +69,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, reactive } from 'vue';
+import { ref, computed, onMounted, nextTick, reactive, watch } from 'vue';
 import { NButton, NInput, NScrollbar, NLayout, NLayoutSider, NLayoutContent, NLayoutHeader, NSpace, useMessage, NSelect } from 'naive-ui';
 import { chat } from '@/api/chat';
 import { getChatModels } from '@/api/chatModel';
@@ -100,6 +103,23 @@ const messagesContainer = ref(null);
 // 模型相关
 const modelOptions = ref([]);
 const selectedModelId = ref('');
+
+// 模式切换：朴素 RAG（直连 Java）与 Agentic RAG（经 Python 编排服务）。
+// 两个服务的接口形态完全一致，所以只需要切 baseURL——两步式调用与
+// EventSource 全部复用。朴素模式**不经过** Python，因此没有代理开销，
+// 两种模式的延迟可以直接比较。
+const MODE_STORAGE_KEY = 'rag_mode';
+const API_BASES = {
+  naive: import.meta.env.VITE_API_BASE_URL,
+  agentic: import.meta.env.VITE_AGENTIC_API_BASE_URL
+};
+const modeOptions = [
+  { label: '朴素 RAG', value: 'naive' },
+  { label: 'Agentic RAG', value: 'agentic' }
+];
+const mode = ref(localStorage.getItem(MODE_STORAGE_KEY) || 'naive');
+watch(mode, (value) => localStorage.setItem(MODE_STORAGE_KEY, value));
+const apiBase = () => API_BASES[mode.value] || API_BASES.naive;
 
 // 格式化消息内容
 const formatMessage = (content) => {
@@ -148,7 +168,7 @@ const chatSession = async (key) => {
 // 获取模型列表
 const loadModelList = async () => {
   try {
-    const chatModels = await getChatModels({ category: 'chat' });
+    const chatModels = await getChatModels({ type: 'chat' });
 
     modelOptions.value = chatModels.map(item => ({
       label: item.name,
@@ -202,6 +222,15 @@ const content = ref('') // 使用 const 声明响应式 ref
 // 发送消息
 const sendMessage = async () => {
   if (!userInput.value.trim()) return;
+
+  // 知识库是必选项。未选择时知识库 id 会拼进 SSE 的 URL 成为空段，
+  // 后端异步任务失败但 SSE 已经返回 200，前端不会收到任何事件，
+  // 表现为"点了发送没反应且不报错"。这里直接拦下。
+  if (!knowledgeId.value) {
+    message.warning('请先选择知识库');
+    return;
+  }
+
   isLoading.value = true;
 
   try {
@@ -225,14 +254,19 @@ const sendMessage = async () => {
     const length = messages.value.length
     const lastMessage = messages.value[length - 1]
     //将最后的提问信息发送给后端
-    const sessionId = await chat(lastMessage)
+    const base = apiBase()
+    const sessionId = await chat(lastMessage, base)
 
     let eventSource = new EventSource(
-      `http://localhost:8082/api/chat/stream/${sessionId}/${knowledgeId.value}`
+      `${base}/chat/stream/${sessionId}/${knowledgeId.value}`
     );
     
     // 存储 AI 回复消息对象的引用
     let aiMessage = null;
+
+    // 标记是否已正常收到 done。后端在 done 之后会关闭连接，
+    // 浏览器可能因此触发 error —— 那不是失败，不能误报。
+    let finished = false;
 
     eventSource.onmessage = (e) => console.log(e.data);
     eventSource.addEventListener("chatContextIdVo", (e) => {
@@ -288,12 +322,18 @@ const sendMessage = async () => {
     });
    
     eventSource.addEventListener("done", (e) => {
+      finished = true
       content.value = ''
       eventSource.close();
     });
     eventSource.onerror = (e) => {
-      console.error("SSE error:", e);
       eventSource.close();
+      if (finished) return;
+      // 后端在异步任务里失败时，SSE 已经返回 200 但不会推送任何事件，
+      // 界面会停在"没反应"的状态。必须显式提示并结束 loading。
+      console.error("SSE error:", e);
+      message.error('回复失败，请检查模型配置或稍后重试');
+      isLoading.value = false;
     };
 
   } catch (error) {

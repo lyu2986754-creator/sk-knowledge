@@ -2,7 +2,7 @@
 
 基于 **Vue3 + SpringBoot + SpringAI + Weaviate + Temporal** 的企业级知识库系统，支持文档上传、语义切块、向量检索与 RAG 对话。
 
-> ⚠️ 本项目为课程/演示项目。仓库**不包含任何真实密钥**：后端 `src/main/resources/application-dev.yml` 已被 `.gitignore` 忽略，请复制 `application-dev.yml.example` 并按本地环境填写后使用。
+> ⚠️ 本项目为课程/演示项目。仓库**不包含任何真实密钥**：后端 `src/main/resources/application-dev.yml`、`deploy/.env`、`agentic-rag/.env` 均已被 `.gitignore` 忽略，请复制对应的示例文件并按本地环境填写后使用。
 
 ## 目录结构
 
@@ -15,8 +15,9 @@
 ├── sk-knowledge-frontend/  # 前端 (Vue3 + Vite)
 │   ├── src/
 │   └── package.json
-├── 架构图.drawio            # 系统架构图 (draw.io 源文件)
-└── 架构图.png              # 架构图预览
+├── agentic-rag/            # Agentic RAG 服务 (Python + FastAPI)：查询改写 + 多轮工具调用
+├── deploy/                 # 中间件编排与运维脚本（docker-compose / 密钥注入 / 重启）
+└── 架构图.png              # 系统架构图预览
 ```
 
 ## 技术栈
@@ -55,4 +56,4 @@ docker-compose up -d   # MySQL / Redis / MinIO / Weaviate / Temporal / MongoDB
 
 ## 架构图
 
-参见根目录 `架构图.png`（由 `架构图.drawio` 编辑生成）。
+参见根目录 `架构图.png`。

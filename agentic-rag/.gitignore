@@ -1,0 +1,15 @@
+# 密钥与本地配置：绝不进版本库
+.env
+
+# 虚拟环境
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# 运行时产物
+*.log
+*.err
+

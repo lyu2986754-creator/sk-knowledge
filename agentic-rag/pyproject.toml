@@ -1,0 +1,26 @@
+[project]
+name = "agentic-rag"
+version = "0.1.0"
+description = "在 Java RAG 之上加一层 Agent 编排：查询改写 + 迭代检索"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    # 登录接口转发 Java 的表单登录，FastAPI 解析 form-data 需要它
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentic_rag"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

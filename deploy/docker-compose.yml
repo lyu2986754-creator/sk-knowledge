@@ -1,0 +1,168 @@
+# 评测平台配套环境：为被评测对象 sk-knowledge 提供全部依赖中间件
+#
+# 端口一律对齐 sk-knowledge/src/main/resources/application-dev.yml，
+# 因此 Java 侧无需任何改动即可直连。
+#
+#   MySQL     13306 -> 3306
+#   Redis     16379 -> 6379
+#   MongoDB   27018 -> 27017
+#   Weaviate  18088 -> 8080
+#   MinIO     19000 -> 9000  (console 19001)
+#   Temporal  17233 -> 7233  (ui 18081)
+#
+# 注意：本机另有原生 MySQL(3306) 与 Redis(6379) 在运行，端口不冲突，互不影响。
+
+name: sk-eval-env
+
+services:
+  mysql:
+    image: mysql:8.4.0
+    container_name: sk-eval-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "123456"
+      MYSQL_DATABASE: sk_knowledge
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-time-zone=+08:00
+    ports:
+      - "13306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p123456"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks: [sknet]
+
+  redis:
+    image: redis:7.0.11
+    container_name: sk-eval-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "123456", "--appendonly", "yes"]
+    ports:
+      - "16379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "123456", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [sknet]
+
+  mongodb:
+    image: mongo:8.0.0
+    container_name: sk-eval-mongodb
+    restart: unless-stopped
+    command: ["--bind_ip_all"]
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongodb-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1}).ok"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+    networks: [sknet]
+
+  weaviate:
+    image: semitechnologies/weaviate:1.33.2
+    container_name: sk-eval-weaviate
+    restart: unless-stopped
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --scheme
+      - http
+    environment:
+      QUERY_DEFAULTS_LIMIT: "25"
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      DEFAULT_VECTORIZER_MODULE: none
+      ENABLE_MODULES: ""
+      CLUSTER_HOSTNAME: node1
+    ports:
+      - "18088:8080"
+      - "15051:50051"
+    volumes:
+      - weaviate-data:/var/lib/weaviate
+    networks: [sknet]
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
+    container_name: sk-eval-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: admin123456
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports:
+      - "19000:9000"
+      - "19001:9001"
+    volumes:
+      - minio-data:/data
+    networks: [sknet]
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: sk-eval-minio-init
+    depends_on: [minio]
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 admin admin123456 >/dev/null 2>&1; do sleep 2; done;
+      mc mb --ignore-existing local/knowledge;
+      echo MINIO_BUCKET_READY;
+      "
+    networks: [sknet]
+
+  temporal:
+    image: temporalio/auto-setup:1.29.0
+    container_name: sk-eval-temporal
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB: mysql8
+      DB_PORT: "3306"
+      MYSQL_USER: root
+      MYSQL_PWD: "123456"
+      MYSQL_SEEDS: mysql
+      DATABASE_NAME: temporal
+      VISIBILITY_DATABASE_NAME: temporal_visibility
+    ports:
+      - "17233:7233"
+    networks: [sknet]
+
+  temporal-ui:
+    image: temporalio/ui:2.39.0
+    container_name: sk-eval-temporal-ui
+    restart: unless-stopped
+    depends_on: [temporal]
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_UI_PORT: "8080"
+    ports:
+      - "18081:8080"
+    networks: [sknet]
+
+networks:
+  sknet:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  redis-data:
+  mongodb-data:
+  weaviate-data:
+  minio-data:

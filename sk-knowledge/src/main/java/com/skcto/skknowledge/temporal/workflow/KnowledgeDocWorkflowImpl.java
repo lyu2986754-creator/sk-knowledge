@@ -16,7 +16,10 @@ public class KnowledgeDocWorkflowImpl implements KnowledgeDocWorkflow {
     private final KnowledgeDocActivities knowledgeDocActivities =
             Workflow.newActivityStub(KnowledgeDocActivities.class,
                     ActivityOptions.newBuilder()
-                            .setStartToCloseTimeout(Duration.ofSeconds(20)) //超时
+                            // 原来的 20 秒对真实文档远远不够：StoreTextToDB 要对文档里
+                            // 每个句子调一次 embedding 做语义分块，一份上万字的法律
+                            // 光嵌入就要几十秒。20 秒下任何真实文档都会 activity 超时。
+                            .setStartToCloseTimeout(Duration.ofMinutes(10)) //超时
                             .setRetryOptions(
                                     RetryOptions.newBuilder()
                                             .setMaximumAttempts(3)  //最大重试次数

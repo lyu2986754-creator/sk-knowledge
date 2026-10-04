@@ -7,6 +7,7 @@ import com.skcto.skknowledge.domain.ChatModel;
 import com.skcto.skknowledge.domain.ChatWindow;
 import com.skcto.skknowledge.domain.User;
 import com.skcto.skknowledge.dto.ChatCompletionsDTO;
+import com.skcto.skknowledge.dto.ChatRoundDTO;
 import com.skcto.skknowledge.factory.ChatClientFactory;
 import com.skcto.skknowledge.mapstuct.ChatCompletionsMapstruct;
 import com.skcto.skknowledge.mapstuct.ChatWindowMapstruct;
@@ -20,13 +21,16 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.messages.*;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.template.st.StTemplateRenderer;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.filter.Filter;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.data.domain.Sort;
@@ -43,7 +47,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -230,6 +236,16 @@ public class ChatCompletionsServiceImpl implements ChatCompletionsService {
             //回答结果
             StringBuffer content = new StringBuffer();
 
+            // ===== 诊断采集（只读，不介入问答链路）=====
+            // 采集真实的召回片段与 token 用量，通过独立的 SSE 事件推给评测平台。
+            // 为什么必须采集：仅凭最终答案无法区分「模型不懂法」和「检索漏了那一条」，
+            // 而这个区别决定了该改 prompt 还是该改检索策略。
+            List<Map<String, Object>> retrievedChunks = new ArrayList<>();
+            final Integer[] promptTokens = {null};
+            final Integer[] completionTokens = {null};
+            final long generateStartMs = System.currentTimeMillis();
+            final long[] firstTokenMs = {0L};
+
             //使用大模型进行回答
             chatClientAnswer
                     .prompt(chatCompletionsDTO.getContent())
@@ -237,9 +253,35 @@ public class ChatCompletionsServiceImpl implements ChatCompletionsService {
                     .messages(historyMessages)//历史上下文聊天记录
                     .advisors(qaAdvisor)//向量数据库召回
                     .stream()
-                    .content()
+                    // 必须用 chatClientResponse()：只有它带响应上下文（context()），
+                    // chatResponse() 返回的 ChatResponse 里没有上下文，拿不到召回片段。
+                    .chatClientResponse()
                     .subscribe(
-                            chunk -> {
+                            chatClientResponse -> {
+                                // 召回片段：QuestionAnswerAdvisor 会放进响应上下文，取首次即可
+                                if (retrievedChunks.isEmpty()) {
+                                    collectRetrievedChunks(chatClientResponse, retrievedChunks);
+                                }
+
+                                ChatResponse chatResponse = chatClientResponse.chatResponse();
+                                if (chatResponse != null && chatResponse.getMetadata() != null) {
+                                    Usage usage = chatResponse.getMetadata().getUsage();
+                                    if (usage != null && usage.getTotalTokens() != null
+                                            && usage.getTotalTokens() > 0) {
+                                        promptTokens[0] = usage.getPromptTokens();
+                                        completionTokens[0] = usage.getCompletionTokens();
+                                    }
+                                }
+
+                                String chunk = chatResponse == null || chatResponse.getResult() == null
+                                        ? null
+                                        : chatResponse.getResult().getOutput().getText();
+                                if (chunk == null || chunk.isEmpty()) {
+                                    return;
+                                }
+                                if (firstTokenMs[0] == 0L) {
+                                    firstTokenMs[0] = System.currentTimeMillis();
+                                }
                                 content.append(chunk);
                                 //发送sse消息给前端
                                 try {
@@ -259,6 +301,11 @@ public class ChatCompletionsServiceImpl implements ChatCompletionsService {
                                 try {
                                     //sse结束
                                     redisTemplate.delete(Constant.SSE_SESSION + sessionId);
+
+                                    // 先推诊断再推 done：评测平台据此拿到真实召回与用量
+                                    sendDiagnostics(sseEmitter, retrievedChunks, promptTokens[0],
+                                            completionTokens[0], generateStartMs, firstTokenMs[0]);
+
                                     //存储相关聊天上下文数据到mongodb中
                                     ChatCompletionsVo chatCompletionsVo = saveChatCompletions(chatCompletionsDTO,content.toString(),userQuestionId,assistantId);
 
@@ -275,6 +322,134 @@ public class ChatCompletionsServiceImpl implements ChatCompletionsService {
         } catch (Exception e) {
         throw new RuntimeException(e);
         }
+    }
+
+    /**
+     * 保存一轮由外部编排（如 Agentic 服务）生成完成的问答。
+     *
+     * 只负责落库：窗口的创建与标题、消息的结构、窗口时间的更新都在这里统一处理。
+     * 调用方不需要知道 MongoDB 的集合与字段形状。
+     */
+    @Override
+    public ChatContextIdVo saveCompletedRound(ChatRoundDTO round) {
+        User user = LoginInfoUtil.getCurrentLoginUser();
+
+        // 创建或复用会话窗口
+        ChatWindow chatWindow = null;
+        if (StringUtils.hasText(round.getWindowId())) {
+            chatWindow = mongoTemplate.findById(round.getWindowId(), ChatWindow.class);
+        }
+        if (chatWindow == null) {
+            // 没给 windowId，或给的 id 在库里不存在（已删除 / 调用方给了临时 id）：
+            // 一律新建窗口，而不是抛异常。
+            // 取舍：宁可多出一个会话，也不要让整轮对话因为 id 对不上而丢失。
+            chatWindow = new ChatWindow();
+            chatWindow.setUserId(user.getId());
+            chatWindow.setCreateTime(new Date());
+            chatWindow.setUpdateTime(new Date());
+            // 外部编排不做标题生成，直接用问题截断，省一次模型调用
+            String question = round.getQuestion() == null ? "" : round.getQuestion();
+            chatWindow.setTittle(question.length() > 18 ? question.substring(0, 18) : question);
+            mongoTemplate.insert(chatWindow);
+        }
+
+        String userQuestionId = ObjectId.get().toString();
+        String assistantId = ObjectId.get().toString();
+        Date now = new Date();
+
+        ChatCompletions userMessage = new ChatCompletions();
+        userMessage.setId(userQuestionId);
+        userMessage.setWindowId(chatWindow.getId());
+        userMessage.setKnowledgeId(round.getKnowledgeId());
+        userMessage.setModelId(round.getModelId());
+        userMessage.setContent(round.getQuestion());
+        userMessage.setRole("user");
+        userMessage.setCreateTime(now);
+
+        ChatCompletions assistantMessage = new ChatCompletions();
+        assistantMessage.setId(assistantId);
+        assistantMessage.setWindowId(chatWindow.getId());
+        assistantMessage.setKnowledgeId(round.getKnowledgeId());
+        assistantMessage.setModelId(round.getModelId());
+        assistantMessage.setContent(round.getAnswer());
+        assistantMessage.setRole("assistant");
+        assistantMessage.setCreateTime(now);
+
+        mongoTemplate.insertAll(List.of(userMessage, assistantMessage));
+
+        // 更新窗口的最后活动时间，让会话列表按最近使用排序
+        Query query = new Query(Criteria.where("id").is(chatWindow.getId()));
+        Update update = new Update();
+        update.set("updateTime", now);
+        mongoTemplate.updateFirst(query, update, ChatWindow.class);
+
+        ChatContextIdVo vo = new ChatContextIdVo();
+        vo.setUserQuestionId(userQuestionId);
+        vo.setAssistantId(assistantId);
+        vo.setChatWindowId(chatWindow.getId());
+        vo.setChatWindowTittle(chatWindow.getTittle());
+        return vo;
+    }
+
+    /**
+     * 从响应上下文里取出 QuestionAnswerAdvisor 放入的召回文档。
+     *
+     * 只读：不改动检索结果，只是把它复制出来给评测平台看。
+     */
+    private void collectRetrievedChunks(ChatClientResponse chatClientResponse,
+                                        List<Map<String, Object>> sink) {
+        Map<String, Object> context = chatClientResponse.context();
+        if (context == null) {
+            return;
+        }
+        Object docs = context.get(QuestionAnswerAdvisor.RETRIEVED_DOCUMENTS);
+        if (!(docs instanceof List<?> list)) {
+            return;
+        }
+        int rank = 1;
+        for (Object item : list) {
+            if (!(item instanceof Document document)) {
+                continue;
+            }
+            Map<String, Object> one = new HashMap<>();
+            one.put("rank", rank++);
+            one.put("content", truncate(document.getText(), 2000));
+            Object source = document.getMetadata() == null
+                    ? null
+                    : document.getMetadata().get("source");
+            one.put("source", source == null ? "" : source.toString());
+            sink.add(one);
+        }
+    }
+
+    /**
+     * 把诊断信息作为独立的 SSE 事件推出。
+     *
+     * 刻意与主链路隔离：推送失败只记警告，绝不影响问答本身。
+     */
+    private void sendDiagnostics(SseEmitter sseEmitter, List<Map<String, Object>> chunks,
+                                 Integer promptTokens, Integer completionTokens,
+                                 long generateStartMs, long firstTokenMs) {
+        Map<String, Object> diagnostics = new HashMap<>();
+        diagnostics.put("retrievedChunks", chunks);
+        diagnostics.put("promptTokens", promptTokens);
+        diagnostics.put("completionTokens", completionTokens);
+        diagnostics.put("generateMs", System.currentTimeMillis() - generateStartMs);
+        diagnostics.put("firstTokenMs",
+                firstTokenMs == 0L ? null : firstTokenMs - generateStartMs);
+        try {
+            sseEmitter.send(SseEmitter.event().name("diagnostics")
+                    .data(objectMapper.writeValueAsString(diagnostics)));
+        } catch (Exception e) {
+            log.warn("推送诊断信息失败：{}", e.toString());
+        }
+    }
+
+    private String truncate(String text, int max) {
+        if (text == null) {
+            return "";
+        }
+        return text.length() <= max ? text : text.substring(0, max);
     }
 
     /**

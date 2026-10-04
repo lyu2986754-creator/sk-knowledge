@@ -17,8 +17,23 @@ dist/
 dist-ssr/
 *.local
 
-# ===== 含真实密钥，禁止提交；请复制 application-dev.yml.example 为 application-dev.yml 后填写 =====
-sk-knowledge/src/main/resources/application-dev.yml
+# ===== Python (agentic-rag) =====
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
 
-# ===== 日志 =====
+# ===== 含真实密钥，禁止提交 =====
+# 后端：请复制 application-dev.yml.example 为 application-dev.yml 后填写
+sk-knowledge/src/main/resources/application-dev.yml
+# 部署脚本与 Agentic 服务读取的本地凭据
+deploy/.env
+agentic-rag/.env
+.env
+
+# ===== 日志与临时文件 =====
 *.log
+*.err
+.tmp*

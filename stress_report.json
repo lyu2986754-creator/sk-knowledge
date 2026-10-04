@@ -1,0 +1,44 @@
+{
+  "base_url": "http://localhost:8082",
+  "threads": 100,
+  "requests_per_thread": 20,
+  "elapsed_s": 78.98,
+  "total": 8000,
+  "ok": 8000,
+  "fail": 0,
+  "qps": 101.3,
+  "per_endpoint": {
+    "知识库列表 GET /api/knowledge/base": {
+      "count": 2000,
+      "ok_pct": 100.0,
+      "avg_ms": 884.38,
+      "p90_ms": 1120.98,
+      "p99_ms": 1423.98,
+      "max_ms": 1599.63
+    },
+    "向量库状态 GET /api/vector/db": {
+      "count": 2000,
+      "ok_pct": 100.0,
+      "avg_ms": 1740.09,
+      "p90_ms": 2321.39,
+      "p99_ms": 2525.94,
+      "max_ms": 2956.72
+    },
+    "对话窗口 GET /api/chat/window": {
+      "count": 2000,
+      "ok_pct": 100.0,
+      "avg_ms": 1222.75,
+      "p90_ms": 2376.2,
+      "p99_ms": 4551.15,
+      "max_ms": 6474.04
+    },
+    "对话补全 POST /api/chat/completions": {
+      "count": 2000,
+      "ok_pct": 100.0,
+      "avg_ms": 97.9,
+      "p90_ms": 140.22,
+      "p99_ms": 208.88,
+      "max_ms": 231.44
+    }
+  }
+}
